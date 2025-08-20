@@ -2815,7 +2815,25 @@
             }));
             
             const description = generatePersonalityDescription(mockTopMarks);
-            profileDescription.innerHTML = description;
+            
+            // Check if we're in test mode for shared results too
+            const urlParams = new URLSearchParams(window.location.search);
+            const isTestMode = urlParams.get('test');
+            
+            let testModeNote = '';
+            if (isTestMode) {
+                testModeNote = `
+                    <div style="margin-top: 20px; padding: 15px; background: #fff3cd; border-radius: 8px; border-left: 4px solid #ffc107;">
+                        <h4 style="color: #856404; margin-bottom: 10px;">🔍 Test Mode Note</h4>
+                        <p style="color: #856404; margin: 0;">
+                            Detailed scores are only available when taking the quiz directly. 
+                            This shared result shows the personality profile only.
+                        </p>
+                    </div>
+                `;
+            }
+            
+            profileDescription.innerHTML = description + testModeNote;
             
             // Set share URL to current URL
             document.getElementById('shareUrl').value = window.location.href;
@@ -2886,14 +2904,40 @@
             allPunctuation.forEach(punct => maxScores[punct] = 0);
 
             // Calculate maximum possible score for each punctuation mark in current quiz
+            // Based on the user's actual engagement level per question
             currentQuizQuestions.forEach(question => {
-                question.answers.forEach(answer => {
-                    Object.keys(answer.scores).forEach(punct => {
-                        // Maximum possible is primary (full points) + secondary (half points)
-                        const fullPoints = answer.scores[punct];
-                        const maxForThisAnswer = fullPoints + (fullPoints * 0.5);
-                        maxScores[punct] += maxForThisAnswer;
+                const questionId = question.id;
+                const userAnswers = quizAnswers[questionId];
+                
+                // Determine how many answers the user actually selected for this question
+                const hasSecondary = userAnswers && userAnswers.secondary !== undefined;
+                
+                // For each punctuation mark, find the optimal score for this question
+                allPunctuation.forEach(punct => {
+                    // Collect all point values for this punctuation mark in this question
+                    const pointValues = [];
+                    question.answers.forEach(answer => {
+                        if (answer.scores[punct]) {
+                            pointValues.push(answer.scores[punct]);
+                        }
                     });
+                    
+                    // Calculate optimal maximum based on user's engagement level
+                    if (pointValues.length === 0) {
+                        // No points available for this punctuation mark in this question
+                        maxScores[punct] += 0;
+                    } else if (!hasSecondary || pointValues.length === 1) {
+                        // User only selected one answer OR only one answer offers points
+                        // Max is just the highest single value
+                        maxScores[punct] += Math.max(...pointValues);
+                    } else {
+                        // User selected two answers AND multiple answers offer points
+                        // Max is optimal combination of primary + secondary
+                        pointValues.sort((a, b) => b - a); // Sort descending
+                        const highest = pointValues[0];
+                        const secondHighest = pointValues[1];
+                        maxScores[punct] += highest + (secondHighest * 0.5);
+                    }
                 });
             });
 
@@ -2999,10 +3043,52 @@
                 <small style="color: #666;">Based on ${currentQuizQuestions.length} questions across 6 personality dimensions</small>
             </div>`;
             
-            profileDescription.innerHTML = quizInfo + description;
+            // Check if we're in test mode and add score details
+            const urlParams = new URLSearchParams(window.location.search);
+            const isTestMode = urlParams.get('test');
+            
+            let testModeScores = '';
+            if (isTestMode) {
+                testModeScores = generateTestModeScores(results.scores, results.topMarks);
+            }
+            
+            profileDescription.innerHTML = quizInfo + description + testModeScores;
 
             // Generate shareable URL
             generateShareableUrl(results.profile);
+        }
+
+        function generateTestModeScores(scores, topMarks) {
+            // Show all scores in test mode for debugging
+            const allScores = Object.keys(scores)
+                .map(punct => ({
+                    punctuation: punct,
+                    score: scores[punct]
+                }))
+                .sort((a, b) => b.score - a.score)
+                .filter(item => item.score > 0);
+
+            const scoresHtml = allScores.map((item, index) => {
+                const species = findSpeciesInfo(item.punctuation);
+                const isInTopResults = topMarks.some(top => top.punctuation === item.punctuation);
+                const style = isInTopResults ? 'font-weight: bold; color: #5a67d8;' : 'color: #666;';
+                
+                return `<div style="${style}">
+                    ${item.punctuation} ${species ? species.name : 'Unknown'}: ${item.score.toFixed(1)}%
+                </div>`;
+            }).join('');
+
+            return `
+                <div style="margin-top: 30px; padding: 20px; background: #f0f4ff; border-radius: 8px; border-left: 4px solid #667eea;">
+                    <h3 style="color: #5a67d8; margin-bottom: 15px;">🔍 Test Mode - All Scores</h3>
+                    <div style="font-family: monospace; font-size: 0.9rem; line-height: 1.4;">
+                        ${scoresHtml}
+                    </div>
+                    <small style="color: #666; margin-top: 10px; display: block;">
+                        Bold blue items appear in your top results above. Scores show percentage of optimal performance.
+                    </small>
+                </div>
+            `;
         }
 
         function generatePersonalityDescription(topMarks) {
