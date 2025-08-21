@@ -15,6 +15,7 @@ document.addEventListener('DOMContentLoaded', function() {
     initializeQuiz();
     checkUrlForResults();
     checkTestMode();
+    checkAdminMode();
     setupKeyboardNavigation();
 });
 
